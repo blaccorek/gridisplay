@@ -1,59 +1,89 @@
 package grid
 
 import (
+	"fmt"
 	"image"
 	"image/jpeg"
 	"image/png"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/disintegration/imaging"
 )
 
-// ImageTile Image Grid component
 type ImageTile struct {
-	ImageFilePath string
-	Image         image.Image
-	Portrait      bool
-	Flipped       bool
+	image    image.Image
+	rotation int
 }
 
 // ReadFile Get Image from file
-func (it *ImageTile) ReadFile() error {
-	absPath, err := filepath.Abs(it.ImageFilePath)
+func (tile *ImageTile) LoadImageFromFile(filePath string) error {
+	absolutePath, err := filepath.Abs(filePath)
 	if err != nil {
 		return err
 	}
 
-	imgFile, err := os.Open(absPath)
+	imageFile, err := os.Open(absolutePath)
 	if err != nil {
 		return err
 	}
-	defer imgFile.Close()
+	defer imageFile.Close()
 
-	splittedPath := strings.Split(it.ImageFilePath, ".")
-	ext := splittedPath[len(splittedPath)-1]
+	fileExtension := filepath.Ext(filePath)
 
-	if ext == "jpg" || ext == "jpeg" {
-		it.Image, err = jpeg.Decode(imgFile)
-	} else {
-		it.Image, err = png.Decode(imgFile)
+	tile.image, err = decode(imageFile, fileExtension)
+	if err != nil {
+		return err
 	}
-	it.resize()
-	return err
+	return nil
 }
 
-func (it *ImageTile) resize() {
-	if it.Portrait {
-		it.Image = imaging.Resize(it.Image, 270, 480, imaging.Lanczos)
+func decode(file *os.File, fileExtension string) (image.Image, error) {
+	if isExtensionJPG(fileExtension) {
+		return jpeg.Decode(file)
+	} else if isExtensionPNG(fileExtension) {
+		return png.Decode(file)
 	} else {
-		it.Image = imaging.Resize(it.Image, 480, 270, imaging.Lanczos)
+		return nil, fmt.Errorf("extension not supported: %s", fileExtension)
 	}
 }
 
-// Upturn Rotate image to 180°
-func (it *ImageTile) Upturn() {
-	it.Image = imaging.Rotate180(it.Image)
-	it.Flipped = !it.Flipped
+func isExtensionJPG(fileExtension string) bool {
+	return fileExtension == "jpg" || fileExtension == "jpeg"
+}
+
+func isExtensionPNG(fileExtension string) bool {
+	return fileExtension == "png"
+}
+
+func (tile *ImageTile) Resize(length int, height int) {
+	tile.image = imaging.Resize(tile.image, length, height, imaging.Lanczos)
+}
+
+func (tile *ImageTile) SetPortrait(isPortrait bool) {
+	if tile.IsPortrait() != isPortrait {
+		tile.image = imaging.Rotate90(tile.image)
+		tile.rotation = (tile.rotation + 90) % 360
+	}
+}
+
+func (tile *ImageTile) IsPortrait() bool {
+	return tile.GetWidth() > tile.GetHeight()
+}
+
+func (tile *ImageTile) GetWidth() int {
+	return tile.image.Bounds().Dx()
+}
+
+func (tile *ImageTile) GetHeight() int {
+	return tile.image.Bounds().Dy()
+}
+
+func (tile *ImageTile) Flip() {
+	tile.image = imaging.Rotate180(tile.image)
+	tile.rotation = (tile.rotation + 180) % 360
+}
+
+func (tile *ImageTile) IsFlipped() bool {
+	return tile.rotation > 90
 }

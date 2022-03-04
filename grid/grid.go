@@ -3,93 +3,86 @@ package grid
 import (
 	"image"
 	"image/draw"
+	"log"
 )
 
 // Grid List of ImageTile
 type Grid struct {
-	Tiles    []*ImageTile
-	RowNb    int
-	ColumnNb int
+	tiles       []*ImageTile
+	rowCount    int
+	columnCount int
 }
 
-// New Create new Grid
-func New(imageFilePaths []string, row int, column int) *Grid {
-	g := &Grid{
-		RowNb:    row,
-		ColumnNb: column,
+// LoadFromFiles Create new Grid
+func LoadFromFiles(imageFilePaths []string, row int, column int) Grid {
+	grid := Grid{
+		rowCount:    row,
+		columnCount: column,
 	}
 	for _, path := range imageFilePaths {
 		tile := &ImageTile{
-			ImageFilePath: path,
-			Flipped:       false,
+			rotation: 0,
 		}
-		g.Tiles = append(g.Tiles, tile)
+		err := tile.LoadImageFromFile(path)
+		if err != nil {
+			log.Printf("Cannot load image from file nammed %s", path)
+		} else {
+			grid.AddTile(tile)
+		}
 	}
-	return g
+	return grid
 }
 
-// Merge bnlabla
-func (g *Grid) Merge() (*image.NRGBA, error) {
-	var canvas *image.NRGBA
+func (grid *Grid) Size() int {
+	return len(grid.tiles)
+}
 
-	imageBoundX := g.Tiles[0].Image.Bounds().Dx()
-	imageBoundY := g.Tiles[0].Image.Bounds().Dy()
+func (grid *Grid) MaxSize() int {
+	return grid.rowCount * grid.columnCount
+}
 
-	canvasBoundX := g.RowNb * imageBoundX
-	canvasBoundY := g.ColumnNb * imageBoundY
+func (grid *Grid) AddTile(tile *ImageTile) {
+	grid.tiles = append(grid.tiles, tile)
+}
 
-	canvasMaxPoint := image.Point{canvasBoundX, canvasBoundY}
+func (grid *Grid) MergeTilesToSingleImage(width int, height int) *image.NRGBA {
+	canvas := createCanvas(width, height)
+	for _, tile := range grid.tiles {
+		tile.Resize(width/grid.rowCount, height/grid.columnCount)
+		position := &image.Point{
+			X: grid.rowCount * tile.GetWidth(),
+			Y: grid.columnCount * tile.GetHeight(),
+		}
+		drawTileInCanvas(position, tile, canvas)
+	}
+	return canvas
+}
+
+func createCanvas(width int, height int) *image.NRGBA {
+	canvasMaxPoint := image.Point{width, height}
 	canvasRect := image.Rectangle{image.Point{0, 0}, canvasMaxPoint}
-	canvas = image.NewNRGBA(canvasRect)
-
-	// draw grids one by one
-	for i, tile := range g.Tiles {
-		img := tile.Image
-		x := i % g.RowNb
-		y := i / g.ColumnNb
-		minPoint := image.Point{x * imageBoundX, y * imageBoundY}
-		maxPoint := minPoint.Add(image.Point{imageBoundX, imageBoundY})
-		nextGridRect := image.Rectangle{minPoint, maxPoint}
-		draw.Draw(canvas, nextGridRect, img, image.Point{}, draw.Src)
-	}
-
-	return canvas, nil
+	return image.NewNRGBA(canvasRect)
 }
 
-// ExecOnTilePermutation Execute f function on each permutation of tiles
-func (g *Grid) ExecOnTilePermutation(f func(*Grid)) {
-	perm(g, f, 0)
+func drawTileInCanvas(position *image.Point, tile *ImageTile, canvas *image.NRGBA) {
+	rectangleToDraw := getTileAreaInCanvas(position, tile)
+	draw.Draw(canvas, rectangleToDraw, tile.image, image.Point{}, draw.Src)
 }
 
-// Permute the values at index i to len(a)-1.
-func perm(grid *Grid, f func(*Grid), i int) {
-	if i > len(grid.Tiles) {
-		f(grid)
-	} else {
-		perm(grid, f, i+1)
-		for j := i + 1; j < len(grid.Tiles); j++ {
-			grid.Tiles[i], grid.Tiles[j] = grid.Tiles[j], grid.Tiles[i]
-			perm(grid, f, i+1)
-			grid.Tiles[i], grid.Tiles[j] = grid.Tiles[j], grid.Tiles[i]
-		}
+func getTileAreaInCanvas(position *image.Point, tile *ImageTile) image.Rectangle {
+	tileWidth := tile.GetWidth()
+	tileHeight := tile.GetHeight()
+	startPointInCanvas := image.Point{position.X * tileWidth, position.Y * tileHeight}
+	endPointInCanvas := startPointInCanvas.Add(image.Point{tileWidth, tileHeight})
+	return image.Rectangle{startPointInCanvas, endPointInCanvas}
+}
+
+func (grid *Grid) HomogeniseTileOrientation(isPortrait bool) {
+	for _, tile := range grid.tiles {
+		tile.SetPortrait(isPortrait)
 	}
 }
 
-func (g *Grid) flipAccordingToMask(mask int) {
-	for i := 0; i < len(g.Tiles); i++ {
-		currentTile := g.Tiles[i]
-		flipped := mask&(1<<i) != 0
-		if flipped != currentTile.Flipped {
-			currentTile.Upturn()
-		}
-	}
-}
-
-// ExecOnTileFlipCombination Execute f function on each flip combination of tiles
-func (g *Grid) ExecOnTileFlipCombination(f func(*Grid)) {
-	length := len(g.Tiles)
-	for mask := 0; mask < 2<<length; mask++ {
-		g.flipAccordingToMask(mask)
-		f(g)
-	}
+func (grid *Grid) Permute(src int, dest int) {
+	grid.tiles[src], grid.tiles[dest] = grid.tiles[dest], grid.tiles[src]
 }
